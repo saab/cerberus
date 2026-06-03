@@ -35,6 +35,11 @@ local target = FILES_BASE .. upstream_path
 
 local httpc = http.new()
 httpc:set_timeout(30000)
+-- ssl_verify=true validates files.pythonhosted.org's certificate against the
+-- trust store configured by `lua_ssl_trusted_certificate` in nginx.conf; the
+-- SNI/verification host is taken from the HTTPS target URL. A bad cert fails the
+-- request (no bytes served). Content integrity is then enforced by the sha256
+-- check below, so transport (TLS) and content (hash pin) are both validated.
 local res, ferr = httpc:request_uri(target, {
   method     = "GET",
   ssl_verify = true,

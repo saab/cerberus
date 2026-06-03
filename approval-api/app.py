@@ -13,6 +13,7 @@ fetches the package's current PyPI hashes and pins them, so the proxy can
 guarantee the bytes it serves match what was approved. `/pin` is an admin
 override that sets an exact hash set.
 """
+import os
 import re
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -22,6 +23,11 @@ app = FastAPI(title="Cerberus Approval API")
 
 PYPI_SIMPLE = "https://pypi.org/simple"
 SIMPLE_JSON = "application/vnd.pypi.simple.v1+json"
+
+# TLS verification of the upstream index. Defaults to the system CA bundle;
+# point UPSTREAM_CA_BUNDLE at a custom CA file for a corporate TLS-inspecting
+# proxy. Verification is always ON — never set this to a falsy value to disable.
+_UPSTREAM_VERIFY = os.getenv("UPSTREAM_CA_BUNDLE") or True
 
 # normalized package name -> set of approved sha256 hex digests (the "approved" set).
 _pins: dict[str, set[str]] = {}
@@ -47,12 +53,19 @@ def status_of(name: str) -> str:
 
 
 def fetch_pypi_hashes(name: str) -> set[str]:
-    """TOFU: fetch every artifact (and PEP 658 metadata) sha256 PyPI lists."""
+    """TOFU: fetch every artifact (and PEP 658 metadata) sha256 PyPI lists.
+
+    The fetch is over HTTPS with TLS certificate verification enabled, so the
+    hashes we pin come from an authenticated PyPI rather than a MITM.
+    """
+    if not PYPI_SIMPLE.startswith("https://"):
+        raise HTTPException(status_code=500, detail="refusing to fetch hashes over a non-TLS URL")
     resp = httpx.get(
         f"{PYPI_SIMPLE}/{name}/",
         headers={"Accept": SIMPLE_JSON},
         timeout=10.0,
         follow_redirects=True,
+        verify=_UPSTREAM_VERIFY,
     )
     resp.raise_for_status()
     hashes = set()

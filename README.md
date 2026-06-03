@@ -127,6 +127,27 @@ proxy is **fail-closed**: if the approval API is unreachable, packages are
 denied. Artifacts are buffered in proxy memory for hashing (fine for
 wheels/sdists; not suited to multi-hundred-MB packages).
 
+### Source integrity
+
+Every fetch from an external source is validated on two independent axes:
+
+- **Transport (TLS).** The proxy verifies the upstream certificate on *both*
+  pull-through legs — the `/simple/` index from `pypi.org` (nginx `proxy_ssl_verify
+  on` against the system CA bundle) and each artifact from `files.pythonhosted.org`
+  (`resty.http` `ssl_verify = true`). The approval API fetches PyPI hashes over
+  verified HTTPS too. A failed handshake aborts the request; nothing unverified is
+  served. Point `UPSTREAM_CA_BUNDLE` (approval API) at a custom CA for a corporate
+  TLS-inspecting proxy.
+- **Content (sha256).** Approval pins the artifact hashes from that
+  TLS-authenticated index, and the proxy refuses to serve any byte stream whose
+  digest isn't in the approved set — so the bytes a client receives are
+  cryptographically guaranteed to match what was approved.
+
+> **PGP/GPG note:** PyPI removed PGP signature support in 2023, so per-artifact
+> GPG verification is not available for PyPI sources; the sha256 pin (above) is the
+> equivalent content-integrity guarantee. Provenance attestations (PEP 740 /
+> Sigstore) are the modern successor and a possible future addition.
+
 ## Quick start
 
 ```bash
@@ -190,6 +211,28 @@ For auto-merge to gate on the tests (rather than merge immediately), enable
 **Allow auto-merge** (Settings → General) and add a branch-protection rule on
 `main` that requires the three CI checks.
 
+### Agentic issue fixing
+
+`.github/workflows/opencode-issue-fix.yml` runs a headless [opencode](https://opencode.ai)
+agent when an issue is opened: it attempts a fix on a `opencode/issue-<n>` branch
+and opens a **draft** PR for manual review (it never merges; the draft PR is then
+validated by the CI checks above). The agent is driven by a **custom
+OpenAI-compatible endpoint** and runs non-interactively
+(`opencode run --dangerously-skip-permissions`).
+
+Configure under Settings → Secrets and variables → Actions:
+
+| Name | Kind | Purpose |
+|------|------|---------|
+| `LLM_API_KEY`  | secret   | API key for the OpenAI-compatible endpoint |
+| `LLM_BASE_URL` | variable | endpoint base URL ending in `/v1` (use a secret if sensitive) |
+| `LLM_MODEL`    | variable | model id to request |
+| `GH_PAT`       | secret (optional) | PAT/app token so CI runs on the agent's PR — PRs opened with the default `GITHUB_TOKEN` don't trigger workflows |
+
+It only runs for issues opened by `OWNER`/`MEMBER`/`COLLABORATOR` (the issue body
+is untrusted input steering an agent with write access); tighten or switch to a
+maintainer-applied label trigger as needed.
+
 ## Configuration
 
 | Env var (on `proxy`)  | Default                     | Meaning                                   |
@@ -208,3 +251,7 @@ For auto-merge to gate on the tests (rather than merge immediately), enable
 - The design generalizes to other ecosystems (npm, etc.) by adding locations and
   filename extractors; this build targets PyPI.
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 Erik Hallros, Saab AB
