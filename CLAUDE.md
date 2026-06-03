@@ -29,7 +29,7 @@ Manual approval control against a running stack (also useful while debugging E2E
 
 ```bash
 # single Python test (pytest -k); $(pwd -W) yields a Docker-friendly path on Git-Bash/Windows
-MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/approval-api:/app" -w /app python:3.12-slim \
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/approval-api:/app" -w /app python:3.14-slim \
   sh -c "pip install -q -r requirements.txt -r requirements-dev.txt && pytest -q -k test_reject_is_terminal"
 ```
 
@@ -44,6 +44,8 @@ The Lua suite is a single self-contained script (`tests/lua/pkgname_spec.lua`) r
 1. **`/simple/<pkg>/` (index)** — `access_by_lua_file gatekeeper.lua` resolves the package name and checks approval; on approval nginx `proxy_pass`es to `pypi.org`. A `sub_filter` rewrites `https://files.pythonhosted.org` → `http://$http_host/files` so artifact downloads route back through the proxy. **Use `$http_host`, not `$host`** — `$host` drops the port and breaks the `:8080` rewrite.
 
 2. **`/files/...` (artifacts)** — `content_by_lua_file serve_file.lua` does **verify-then-serve**: it re-checks approval, fetches the artifact into proxy memory via `resty.http`, computes its sha256, and only `ngx.print`s the bytes if the digest is in the package's approved hash set. Nothing is streamed to the client until the hash matches, so a mismatch leaks zero bytes. (Artifacts are buffered whole in memory — fine for wheels/sdists, not for very large packages.)
+
+**Source integrity (don't regress this):** both upstream legs verify TLS — the `/simple/` `proxy_pass` uses `proxy_ssl_verify on` (against `/etc/ssl/certs/ca-certificates.crt`), and `serve_file.lua` uses `ssl_verify = true` (trust store from `lua_ssl_trusted_certificate`); the approval-api fetches PyPI over verified HTTPS (`verify=_UPSTREAM_VERIFY`, override via `UPSTREAM_CA_BUNDLE`). Transport integrity = TLS verification; content integrity = the sha256 pin. PyPI dropped PGP in 2023, so there is intentionally no GPG step.
 
 Shared Lua lives in `proxy/lua/lib/`:
 - `pkgname.lua` — **pure Lua, no `ngx` deps** (so it's unit-testable with the bare `resty`/`luajit` CLI). PEP 503 normalization + filename→project-name extraction. The filename parser uses `^(.-)%-%d` ("name is everything before the first dash followed by a digit") — do **not** revert to splitting on the first dash, which truncates hyphenated sdist names (`foo-bar-1.0.tar.gz` → `foo`).

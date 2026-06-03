@@ -16,7 +16,7 @@ test:         ## Run the end-to-end gatekeeping suite
 # MSYS_NO_PATHCONV keeps Git-Bash on Windows from mangling container paths; it is
 # ignored on Linux/macOS.
 test-unit:    ## Python unit tests for the approval-api (mocks PyPI; offline)
-	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/approval-api:/app" -w /app python:3.12-slim \
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/approval-api:/app" -w /app python:3.14-slim \
 	  sh -c "pip install -q -r requirements.txt -r requirements-dev.txt && pytest -q"
 
 test-lua:     ## Pure-Lua unit tests via the resty CLI (offline)
