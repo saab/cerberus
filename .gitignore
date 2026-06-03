@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# uv
+.uv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

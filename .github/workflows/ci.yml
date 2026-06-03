@@ -1,0 +1,54 @@
+name: CI
+
+# Runs the full test pyramid as required checks on every PR into main (including
+# Dependabot PRs) and on pushes to main. These job names are what you set as
+# required status checks in the branch-protection rule for `main`.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin the Compose project name so the built image is `cerberus-proxy`
+  # regardless of the checkout directory (the test-lua make target expects it).
+  COMPOSE_PROJECT_NAME: cerberus
+
+jobs:
+  unit-python:
+    name: Unit tests (Python / approval-api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pytest (PyPI mocked, offline)
+        run: make test-unit
+
+  unit-lua:
+    name: Unit tests (Lua / pkgname)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run resty spec (offline)
+        run: make test-lua
+
+  e2e:
+    name: End-to-end (uv through the proxy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run end-to-end gatekeeping suite
+        run: make test
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs proxy approval-api || true
+      - name: Tear down
+        if: always()
+        run: docker compose down --remove-orphans || true

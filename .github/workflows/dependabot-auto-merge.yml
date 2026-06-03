@@ -1,0 +1,41 @@
+name: Dependabot auto-merge
+
+# Enables auto-merge on Dependabot PRs. GitHub completes the merge only once the
+# required status checks (the CI jobs) pass on the PR.
+#
+# Prerequisites (one-time repo setup):
+#   1. Settings -> General -> Pull Requests -> enable "Allow auto-merge".
+#   2. Settings -> Branches -> branch protection for `main` requiring the CI
+#      checks (Unit tests (Python...), Unit tests (Lua...), End-to-end...).
+# Without (2), --auto would merge immediately without waiting for tests.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge for Dependabot
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Provides the non-author approval a "require approvals" branch rule needs.
+      # Remove if your org disallows bot approvals.
+      - name: Approve the PR
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (merges when required checks pass)
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,45 @@
+services:
+  approval-api:
+    build: ./approval-api
+    container_name: cerberus-approval-api
+    ports:
+      - "9000:9000"          # exposed so you can approve/revoke from the host
+    networks: [cerberus]
+
+  proxy:
+    build: ./proxy
+    container_name: cerberus-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      APPROVAL_API_URL: "http://approval-api:9000"
+      APPROVAL_CACHE_TTL: "5"     # seconds a decision is cached (revocation latency)
+      APPROVAL_TIMEOUT_MS: "2000"
+      PENDING_RETRY_AFTER: "60"   # Retry-After (s) sent with 503 for pending packages
+    depends_on:
+      approval-api:
+        condition: service_healthy
+    networks: [cerberus]
+
+  # E2E test runner. Only starts under the "test" profile so a plain
+  # `docker compose up` runs just the services. Run with:
+  #   docker compose run --rm tester
+  tester:
+    build: ./tests
+    container_name: cerberus-tester
+    environment:
+      PROXY_URL: "http://proxy:8080"
+      APPROVAL_URL: "http://approval-api:9000"
+      APPROVAL_CACHE_TTL: "5"
+      TEST_PACKAGE: "six"
+    depends_on:
+      proxy:
+        condition: service_healthy
+      approval-api:
+        condition: service_healthy
+    profiles: [test]
+    networks: [cerberus]
+
+networks:
+  cerberus:
+    driver: bridge
